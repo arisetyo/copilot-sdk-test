@@ -31,6 +31,12 @@ export default async function aiRoutes(fastify) {
     await copilot.stop();
   });
 
+  /**
+   * POST /ai/hello
+   *
+   * Simple hello-world endpoint using Copilot SDK.
+   * Accepts a prompt and returns the AI-generated answer.
+   */
   fastify.post(
     "/ai/hello",
     {
@@ -92,6 +98,88 @@ export default async function aiRoutes(fastify) {
         prompt,
         answer,
       };
+    },
+  );
+
+  /**
+   * POST /ai/stream
+   *
+   * SSE streaming endpoint for real-time AI responses.
+   * Creates a session with streaming enabled and sends delta events to the client.
+   *
+   * SSE Event Format:
+   * - event: delta     -> partial text chunk
+   * - event: done      -> stream complete
+   * - event: error     -> error occurred
+   */
+  fastify.post(
+    "/ai/stream",
+    {
+      schema: {
+        description: "Streaming AI endpoint using Server-Sent Events",
+        tags: ["ai"],
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["prompt"],
+          properties: {
+            prompt: { type: "string", minLength: 1 },
+            model: { type: "string", minLength: 1 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { prompt, model } = request.body;
+
+      // Set SSE headers
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      /**
+       * Helper to send SSE events
+       * @param {string} event - Event name (delta, done, error)
+       * @param {string} data - Event data (JSON string)
+       */
+      const sendEvent = (event, data) => {
+        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      try {
+        // Create session with streaming enabled
+        const session = await copilot.createSession({
+          ...(model && { model }),
+          streaming: true,
+        });
+
+        /**
+         * Listen for streaming events using the SDK's event callback.
+         * Per docs: session.on((event: SessionEvent) => { ... })
+         * Event types:
+         * - "assistant.message_delta" -> event.data.deltaContent
+         * - "session.idle" -> response complete
+         */
+        session.on((event) => {
+          fastify.log.info({ eventType: event?.type }, "SDK event received");
+
+          if (event?.type === "assistant.message_delta" && event?.data?.deltaContent) {
+            sendEvent("delta", { text: event.data.deltaContent });
+          }
+        });
+
+        // Send the prompt and wait for completion
+        await session.sendAndWait({ prompt });
+
+        // Signal stream complete
+        sendEvent("done", { success: true });
+      } catch (err) {
+        sendEvent("error", { message: err.message || "Unknown error" });
+      } finally {
+        reply.raw.end();
+      }
     },
   );
 }

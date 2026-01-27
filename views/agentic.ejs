@@ -6,6 +6,8 @@
   <title>AI-Assisted Registration</title>
   <link rel="stylesheet" href="/public/css/styles.css">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Add before closing </head> tag -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
   <div class="container-wide">
@@ -206,24 +208,76 @@
      * Simulate AI response (placeholder for actual Copilot SDK integration)
      * In Phase 2, this will be replaced with actual API call
      */
-    function simulateAiResponse(userMessage) {
-      // Show typing indicator
-      addChatMessage('<em>Thinking...</em>', 'assistant');
+    async function sendToAI(userMessage) {
+      // Create a placeholder message for the streaming response
+      const messagesEl = document.getElementById('chat-messages');
+      const messageEl = document.createElement('div');
+      messageEl.className = 'message message-assistant';
+      messageEl.innerHTML = '<div class="message-content"><span class="streaming-text"></span><span class="typing-cursor">▋</span></div>';
+      messagesEl.appendChild(messageEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
 
-      // Simulate delay
-      setTimeout(() => {
-        // Remove typing indicator
-        const messages = document.getElementById('chat-messages');
-        messages.removeChild(messages.lastChild);
+      const streamingText = messageEl.querySelector('.streaming-text');
+      const cursor = messageEl.querySelector('.typing-cursor');
+      let fullResponse = '';
 
-        // Placeholder response
-        addChatMessage(
-          `<p>I understood your message. In the next phase, I'll use the Copilot SDK to extract information and fill the form.</p>
-           <p><strong>Your message:</strong> "${userMessage}"</p>
-           <p class="text-muted">⚠️ AI integration not yet implemented</p>`,
-          'assistant'
-        );
-      }, 1000);
+      try {
+        // Use fetch to POST and read SSE stream
+        const response = await fetch('/ai/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: userMessage }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE events from buffer
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          let eventType = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7);
+            } else if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+
+              if (eventType === 'delta' && data.text) {
+                fullResponse += data.text;
+                // Update streaming text after parsing markdown
+                streamingText.innerHTML = marked.parse(fullResponse);
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              } else if (eventType === 'error') {
+                throw new Error(data.message);
+              }
+            }
+          }
+        }
+
+        // Remove cursor when done
+        cursor.remove();
+
+        // If no response was streamed, show a fallback
+        if (!fullResponse.trim()) {
+          streamingText.innerHTML = '<em>No response received from AI.</em>';
+        }
+      } catch (err) {
+        // Remove cursor and show error
+        cursor.remove();
+        streamingText.innerHTML = `<span class="error-text">Error: ${err.message}</span>`;
+      }
     }
 
     // Event: Send button click
@@ -234,7 +288,7 @@
       if (message) {
         addChatMessage(`<p>${message}</p>`, 'user');
         input.value = '';
-        simulateAiResponse(message);
+        sendToAI(message);
       }
     });
 

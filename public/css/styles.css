@@ -601,3 +601,26 @@ form {
     font-size: 1.5rem;
   }
 }
+
+/* Streaming text animation */
+.typing-cursor {
+  display: inline-block;
+  color: var(--color-primary);
+  animation: blink 0.8s infinite;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.streaming-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-text {
+  color: var(--color-error);
+  font-style: italic;
+}
