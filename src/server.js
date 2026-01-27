@@ -14,6 +14,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import registerRoutes from './routes/register.js';
+import aiRoutes from './routes/ai.js';
 
 // ES module compatibility: recreate __dirname since it's not available in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -40,6 +41,7 @@ await fastify.register(fastifyView, {
 
 // Register routes
 await fastify.register(registerRoutes);
+await fastify.register(aiRoutes);
 
 /**
  * Start the Fastify server

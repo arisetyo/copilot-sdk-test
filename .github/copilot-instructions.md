@@ -12,6 +12,8 @@ Always add inline documentation to the codebase to explain non-trivial logic. Us
 
 ## Tech Stack
 
+Always use JavaScript, no TypeScript.
+
 ### Backend
 - **Node.js** (v18+) with ES modules
 - **Fastify** as the web framework
