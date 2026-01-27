@@ -5,12 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI-Assisted Registration</title>
   <link rel="stylesheet" href="/public/css/styles.css">
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <!-- Add before closing </head> tag -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-  <div class="container-wide">
+  <div class="container-wide" x-data="registrationApp()">
     <header>
       <a href="/" class="back-link">← Back to home</a>
       <h1>AI-Assisted Registration</h1>
@@ -18,80 +17,44 @@
     </header>
 
     <main class="two-column-layout">
-      <!-- Left Column: Form Fields (read-only display of current values) -->
+      <!-- Left Column: Form Fields -->
       <section class="fields-panel">
         <h2>Registration Fields</h2>
         <p class="panel-description">These fields will be populated by the AI based on your description.</p>
 
         <div class="field-display-list">
-          <div class="field-display" data-field="full_name">
-            <label>Full Name</label>
-            <div class="field-value" id="display-full_name">
-              <span class="empty-value">Not set</span>
+          <template x-for="field in fieldList" :key="field.key">
+            <div class="field-display" :class="{ 'ai-suggested': form[field.key]?.aiSuggested }">
+              <label x-text="field.label"></label>
+              <div class="field-value">
+                <template x-if="form[field.key]?.value">
+                  <span>
+                    <span class="filled-value" x-text="form[field.key].value"></span>
+                    <span class="ai-badge" x-show="form[field.key]?.aiSuggested">AI</span>
+                  </span>
+                </template>
+                <template x-if="!form[field.key]?.value">
+                  <span class="empty-value">Not set</span>
+                </template>
+              </div>
+              <div class="field-options" x-show="field.options" x-text="field.options"></div>
             </div>
-          </div>
-
-          <div class="field-display" data-field="email">
-            <label>Email</label>
-            <div class="field-value" id="display-email">
-              <span class="empty-value">Not set</span>
-            </div>
-          </div>
-
-          <div class="field-display" data-field="city">
-            <label>City</label>
-            <div class="field-value" id="display-city">
-              <span class="empty-value">Not set</span>
-            </div>
-          </div>
-
-          <div class="field-display" data-field="institution">
-            <label>Institution</label>
-            <div class="field-value" id="display-institution">
-              <span class="empty-value">Not set</span>
-            </div>
-            <div class="field-options">
-              Options: <%= fieldOptions.institutions.join(', ') %>
-            </div>
-          </div>
-
-          <div class="field-display" data-field="role">
-            <label>Role</label>
-            <div class="field-value" id="display-role">
-              <span class="empty-value">Not set</span>
-            </div>
-            <div class="field-options">Depends on institution</div>
-          </div>
-
-          <div class="field-display" data-field="position">
-            <label>Position</label>
-            <div class="field-value" id="display-position">
-              <span class="empty-value">Not set</span>
-            </div>
-            <div class="field-options">Depends on institution</div>
-          </div>
+          </template>
         </div>
 
-        <!-- Hidden form for actual submission -->
-        <form id="registration-form" class="hidden-form">
-          <input type="hidden" name="full_name" id="field-full_name">
-          <input type="hidden" name="email" id="field-email">
-          <input type="hidden" name="city" id="field-city">
-          <input type="hidden" name="institution" id="field-institution">
-          <input type="hidden" name="role" id="field-role">
-          <input type="hidden" name="position" id="field-position">
-        </form>
-
         <div class="form-actions">
-          <button type="button" class="btn btn-primary" id="submit-btn" disabled>
+          <button 
+            type="button" 
+            class="btn btn-primary" 
+            :disabled="!canSubmit"
+            @click="submitForm"
+          >
             Submit Registration
           </button>
-          <button type="button" class="btn btn-secondary" id="clear-btn">
+          <button type="button" class="btn btn-secondary" @click="clearForm">
             Clear All
           </button>
         </div>
-
-        <div id="result"></div>
       </section>
 
       <!-- Right Column: AI Chat Interface -->
@@ -100,30 +63,39 @@
         <p class="panel-description">Tell me about yourself and I'll help fill in the form.</p>
 
         <!-- Chat Messages Container -->
-        <div class="chat-messages" id="chat-messages">
-          <div class="message message-assistant">
-            <div class="message-content">
-              <p>Hello! I'm here to help you complete the registration form.</p>
-              <p>Tell me about yourself — for example:</p>
-              <ul>
-                <li>"I'm Dr. Sarah Chen, a researcher at Stanford University"</li>
-                <li>"My name is John and I work in QA at a tech company in Seattle"</li>
-                <li>"I'm a nurse at City Hospital in Jakarta"</li>
-              </ul>
-              <p>I'll extract the relevant information and fill in the form fields for you.</p>
+        <div class="chat-messages" x-ref="chatMessages">
+          <template x-for="(msg, index) in messages" :key="index">
+            <div class="message" :class="'message-' + msg.type">
+              <div class="message-content">
+                <template x-if="msg.streaming">
+                  <span>
+                    <span x-html="msg.content"></span>
+                    <span class="typing-cursor">▋</span>
+                  </span>
+                </template>
+                <template x-if="!msg.streaming">
+                  <span x-html="msg.content"></span>
+                </template>
+              </div>
             </div>
-          </div>
+          </template>
         </div>
 
         <!-- Chat Input -->
         <div class="chat-input-container">
           <textarea 
-            id="user-input" 
+            x-model="userInput"
+            @keydown.enter.prevent="!$event.shiftKey && sendMessage()"
             class="chat-input" 
             placeholder="Describe yourself here..."
             rows="3"
           ></textarea>
-          <button type="button" class="btn btn-primary" id="send-btn">
+          <button 
+            type="button" 
+            class="btn btn-primary" 
+            @click="sendMessage"
+            :disabled="!userInput.trim() || isStreaming"
+          >
             Ask AI
           </button>
         </div>
@@ -133,190 +105,179 @@
 
   <script>
     /**
-     * Field options from server - used for validation and display
+     * Alpine.js component for the AI-assisted registration form.
+     * Replaces vanilla JS with reactive data bindings.
      */
-    const fieldOptions = <%- JSON.stringify(fieldOptions) %>;
+    function registrationApp() {
+      return {
+        /** Field options from server */
+        fieldOptions: <%- JSON.stringify(fieldOptions) %>,
 
-    /**
-     * Current form state - tracks all field values
-     */
-    const formState = {
-      full_name: null,
-      email: null,
-      city: null,
-      institution: null,
-      role: null,
-      position: null
-    };
+        /** Field definitions for rendering */
+        fieldList: [
+          { key: 'full_name', label: 'Full Name' },
+          { key: 'email', label: 'Email' },
+          { key: 'city', label: 'City' },
+          { key: 'institution', label: 'Institution', options: 'Options: <%= fieldOptions.institutions.join(", ") %>' },
+          { key: 'role', label: 'Role', options: 'Depends on institution' },
+          { key: 'position', label: 'Position', options: 'Depends on institution' },
+        ],
 
-    /**
-     * Update the display for a single field
-     * Shows the value or "Not set" if empty, with appropriate styling
-     * 
-     * @param {string} fieldName - The name of the field to update
-     * @param {string|null} value - The new value (null means empty)
-     * @param {boolean} isAiSuggested - Whether this value came from AI
-     */
-    function updateFieldDisplay(fieldName, value, isAiSuggested = false) {
-      const displayEl = document.getElementById(`display-${fieldName}`);
-      const fieldEl = document.getElementById(`field-${fieldName}`);
-      const containerEl = displayEl.closest('.field-display');
+        /** Form state - each field has { value, aiSuggested } */
+        form: {
+          full_name: { value: null, aiSuggested: false },
+          email: { value: null, aiSuggested: false },
+          city: { value: null, aiSuggested: false },
+          institution: { value: null, aiSuggested: false },
+          role: { value: null, aiSuggested: false },
+          position: { value: null, aiSuggested: false },
+        },
 
-      if (value) {
-        displayEl.innerHTML = `<span class="filled-value">${value}</span>`;
-        if (isAiSuggested) {
-          displayEl.innerHTML += '<span class="ai-badge">AI</span>';
-          containerEl.classList.add('ai-suggested');
-        }
-        fieldEl.value = value;
-        formState[fieldName] = value;
-      } else {
-        displayEl.innerHTML = '<span class="empty-value">Not set</span>';
-        containerEl.classList.remove('ai-suggested');
-        fieldEl.value = '';
-        formState[fieldName] = null;
-      }
+        /** Chat messages array */
+        messages: [
+          {
+            type: 'assistant',
+            content: `<p>Hello! I'm here to help you complete the registration form.</p>
+              <p>Tell me about yourself — for example:</p>
+              <ul>
+                <li>"I'm Dr. Sarah Chen, a researcher at Stanford University"</li>
+                <li>"My name is John and I work in QA at a tech company in Seattle"</li>
+                <li>"I'm a nurse at City Hospital in Jakarta"</li>
+              </ul>
+              <p>I'll extract the relevant information and fill in the form fields for you.</p>`,
+            streaming: false,
+          },
+        ],
 
-      updateSubmitButton();
-    }
+        /** User input binding */
+        userInput: '',
 
-    /**
-     * Enable submit button only when required fields are filled
-     */
-    function updateSubmitButton() {
-      const requiredFields = ['full_name', 'email', 'institution', 'role', 'position'];
-      const allFilled = requiredFields.every(field => formState[field]);
-      document.getElementById('submit-btn').disabled = !allFilled;
-    }
+        /** Streaming state */
+        isStreaming: false,
 
-    /**
-     * Add a message to the chat display
-     * 
-     * @param {string} content - The message content (can include HTML)
-     * @param {string} type - Either 'user' or 'assistant'
-     */
-    function addChatMessage(content, type) {
-      const messagesEl = document.getElementById('chat-messages');
-      const messageEl = document.createElement('div');
-      messageEl.className = `message message-${type}`;
-      messageEl.innerHTML = `<div class="message-content">${content}</div>`;
-      messagesEl.appendChild(messageEl);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
+        /** Computed: check if required fields are filled */
+        get canSubmit() {
+          const required = ['full_name', 'email', 'institution', 'role', 'position'];
+          return required.every(key => this.form[key]?.value);
+        },
 
-    /**
-     * Simulate AI response (placeholder for actual Copilot SDK integration)
-     * In Phase 2, this will be replaced with actual API call
-     */
-    async function sendToAI(userMessage) {
-      // Create a placeholder message for the streaming response
-      const messagesEl = document.getElementById('chat-messages');
-      const messageEl = document.createElement('div');
-      messageEl.className = 'message message-assistant';
-      messageEl.innerHTML = '<div class="message-content"><span class="streaming-text"></span><span class="typing-cursor">▋</span></div>';
-      messagesEl.appendChild(messageEl);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+        /**
+         * Update a form field value
+         * @param {string} key - Field name
+         * @param {string|null} value - Field value
+         * @param {boolean} aiSuggested - Whether value came from AI
+         */
+        setField(key, value, aiSuggested = false) {
+          this.form[key] = { value, aiSuggested };
+        },
 
-      const streamingText = messageEl.querySelector('.streaming-text');
-      const cursor = messageEl.querySelector('.typing-cursor');
-      let fullResponse = '';
+        /** Clear all form fields */
+        clearForm() {
+          Object.keys(this.form).forEach(key => {
+            this.form[key] = { value: null, aiSuggested: false };
+          });
+          this.addMessage('<p><em>Form cleared. Tell me about yourself to start again.</em></p>', 'assistant');
+        },
 
-      try {
-        // Use fetch to POST and read SSE stream
-        const response = await fetch('/ai/stream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: userMessage }),
-        });
+        /** Submit the form (shows confirmation for now) */
+        submitForm() {
+          const data = {};
+          Object.keys(this.form).forEach(key => {
+            data[key] = this.form[key]?.value;
+          });
+          this.addMessage(
+            `<p>✅ <strong>Registration submitted!</strong></p><pre>${JSON.stringify(data, null, 2)}</pre>`,
+            'assistant'
+          );
+        },
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        /**
+         * Add a message to chat
+         * @param {string} content - HTML content
+         * @param {string} type - 'user' or 'assistant'
+         * @param {boolean} streaming - Whether message is still streaming
+         */
+        addMessage(content, type, streaming = false) {
+          this.messages.push({ type, content, streaming });
+          this.$nextTick(() => this.scrollToBottom());
+        },
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        /** Scroll chat container to bottom */
+        scrollToBottom() {
+          if (this.$refs.chatMessages) {
+            this.$refs.chatMessages.scrollTop = this.$refs.chatMessages.scrollHeight;
+          }
+        },
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        /** Send message to AI with SSE streaming */
+        async sendMessage() {
+          const message = this.userInput.trim();
+          if (!message || this.isStreaming) return;
 
-          buffer += decoder.decode(value, { stream: true });
+          // Add user message
+          this.addMessage(`<p>${message}</p>`, 'user');
+          this.userInput = '';
+          this.isStreaming = true;
 
-          // Parse SSE events from buffer
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          // Add streaming placeholder
+          const streamingIndex = this.messages.length;
+          this.messages.push({ type: 'assistant', content: '', streaming: true });
 
-          let eventType = '';
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              eventType = line.slice(7);
-            } else if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6));
+          let fullResponse = '';
 
-              if (eventType === 'delta' && data.text) {
-                fullResponse += data.text;
-                // Update streaming text after parsing markdown
-                streamingText.innerHTML = marked.parse(fullResponse);
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-              } else if (eventType === 'error') {
-                throw new Error(data.message);
+          try {
+            const response = await fetch('/ai/stream', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt: message }),
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              let eventType = '';
+              for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                  eventType = line.slice(7);
+                } else if (line.startsWith('data: ')) {
+                  const data = JSON.parse(line.slice(6));
+
+                  if (eventType === 'delta' && data.text) {
+                    fullResponse += data.text;
+                    this.messages[streamingIndex].content = marked.parse(fullResponse);
+                    this.$nextTick(() => this.scrollToBottom());
+                  } else if (eventType === 'error') {
+                    throw new Error(data.message);
+                  }
+                }
               }
             }
+
+            // Finalize message
+            this.messages[streamingIndex].streaming = false;
+            if (!fullResponse.trim()) {
+              this.messages[streamingIndex].content = '<em>No response received from AI.</em>';
+            }
+          } catch (err) {
+            this.messages[streamingIndex].streaming = false;
+            this.messages[streamingIndex].content = `<span class="error-text">Error: ${err.message}</span>`;
+          } finally {
+            this.isStreaming = false;
           }
-        }
-
-        // Remove cursor when done
-        cursor.remove();
-
-        // If no response was streamed, show a fallback
-        if (!fullResponse.trim()) {
-          streamingText.innerHTML = '<em>No response received from AI.</em>';
-        }
-      } catch (err) {
-        // Remove cursor and show error
-        cursor.remove();
-        streamingText.innerHTML = `<span class="error-text">Error: ${err.message}</span>`;
-      }
+        },
+      };
     }
-
-    // Event: Send button click
-    document.getElementById('send-btn').addEventListener('click', () => {
-      const input = document.getElementById('user-input');
-      const message = input.value.trim();
-
-      if (message) {
-        addChatMessage(`<p>${message}</p>`, 'user');
-        input.value = '';
-        sendToAI(message);
-      }
-    });
-
-    // Event: Enter key to send (Shift+Enter for newline)
-    document.getElementById('user-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        document.getElementById('send-btn').click();
-      }
-    });
-
-    // Event: Clear all fields
-    document.getElementById('clear-btn').addEventListener('click', () => {
-      Object.keys(formState).forEach(field => {
-        updateFieldDisplay(field, null);
-      });
-      addChatMessage('<p><em>Form cleared. Tell me about yourself to start again.</em></p>', 'assistant');
-    });
-
-    // Event: Submit registration
-    document.getElementById('submit-btn').addEventListener('click', () => {
-      // For now, just show the data that would be submitted
-      addChatMessage(
-        `<p>✅ <strong>Registration submitted!</strong></p>
-         <pre>${JSON.stringify(formState, null, 2)}</pre>`,
-        'assistant'
-      );
-    });
   </script>
 </body>
 </html>
