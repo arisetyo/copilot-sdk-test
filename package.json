@@ -1,0 +1,18 @@
+{
+  "name": "copilot-sdk-test",
+  "version": "1.0.0",
+  "description": "AI-Assisted Registration Form using GitHub Copilot SDK",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@fastify/formbody": "^8.0.1",
+    "@fastify/static": "^8.0.4",
+    "@fastify/view": "^10.0.1",
+    "ejs": "^3.1.10",
+    "fastify": "^5.2.1"
+  }
+}

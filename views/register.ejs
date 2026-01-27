@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registration Form</title>
+  <link rel="stylesheet" href="/public/css/styles.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a href="/" class="back-link">← Back to home</a>
+      <h1>Registration Form</h1>
+      <p class="subtitle">Fill in your details to register</p>
+    </header>
+
+    <main>
+      <form id="registration-form" hx-post="/register" hx-target="#result" hx-swap="innerHTML">
+        <div class="form-group">
+          <label for="full_name">Full Name <span class="required">*</span></label>
+          <input 
+            type="text" 
+            id="full_name" 
+            name="full_name" 
+            placeholder="Enter your full name"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email <span class="required">*</span></label>
+          <input 
+            type="email" 
+            id="email" 
+            name="email" 
+            placeholder="Enter your email address"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="city">City</label>
+          <input 
+            type="text" 
+            id="city" 
+            name="city" 
+            placeholder="Enter your city"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="institution">Institution <span class="required">*</span></label>
+          <select 
+            id="institution" 
+            name="institution" 
+            required
+            onchange="updateConditionalFields()"
+          >
+            <option value="">Select your institution type</option>
+            <% fieldOptions.institutions.forEach(inst => { %>
+              <option value="<%= inst %>"><%= inst %></option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="form-group" id="role-group" style="display: none;">
+          <label for="role">Role <span class="required">*</span></label>
+          <select id="role" name="role">
+            <option value="">Select your role</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="position-group" style="display: none;">
+          <label for="position">Position <span class="required">*</span></label>
+          <select id="position" name="position">
+            <option value="">Select your position</option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Register</button>
+          <button type="reset" class="btn btn-secondary">Clear</button>
+        </div>
+      </form>
+
+      <div id="result"></div>
+    </main>
+  </div>
+
+  <script>
+    // Field options from server
+    const fieldOptions = <%- JSON.stringify(fieldOptions) %>;
+
+    function updateConditionalFields() {
+      const institution = document.getElementById('institution').value;
+      const roleGroup = document.getElementById('role-group');
+      const positionGroup = document.getElementById('position-group');
+      const roleSelect = document.getElementById('role');
+      const positionSelect = document.getElementById('position');
+
+      if (institution) {
+        // Show conditional fields
+        roleGroup.style.display = 'block';
+        positionGroup.style.display = 'block';
+
+        // Populate role options
+        const roles = fieldOptions.roles[institution] || [];
+        roleSelect.innerHTML = '<option value="">Select your role</option>';
+        roles.forEach(role => {
+          roleSelect.innerHTML += `<option value="${role}">${role}</option>`;
+        });
+
+        // Populate position options
+        const positions = fieldOptions.positions[institution] || [];
+        positionSelect.innerHTML = '<option value="">Select your position</option>';
+        positions.forEach(pos => {
+          positionSelect.innerHTML += `<option value="${pos}">${pos}</option>`;
+        });
+
+        // Make fields required
+        roleSelect.required = true;
+        positionSelect.required = true;
+      } else {
+        // Hide conditional fields
+        roleGroup.style.display = 'none';
+        positionGroup.style.display = 'none';
+        roleSelect.required = false;
+        positionSelect.required = false;
+      }
+    }
+
+    // Reset conditional fields when form is reset
+    document.getElementById('registration-form').addEventListener('reset', () => {
+      setTimeout(() => {
+        document.getElementById('role-group').style.display = 'none';
+        document.getElementById('position-group').style.display = 'none';
+      }, 0);
+    });
+  </script>
+</body>
+</html>

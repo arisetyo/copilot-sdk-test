@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-Assisted Registration</title>
+  <link rel="stylesheet" href="/public/css/styles.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+  <div class="container-wide">
+    <header>
+      <a href="/" class="back-link">← Back to home</a>
+      <h1>AI-Assisted Registration</h1>
+      <p class="subtitle">Describe yourself and let the AI fill the form for you</p>
+    </header>
+
+    <main class="two-column-layout">
+      <!-- Left Column: Form Fields (read-only display of current values) -->
+      <section class="fields-panel">
+        <h2>Registration Fields</h2>
+        <p class="panel-description">These fields will be populated by the AI based on your description.</p>
+
+        <div class="field-display-list">
+          <div class="field-display" data-field="full_name">
+            <label>Full Name</label>
+            <div class="field-value" id="display-full_name">
+              <span class="empty-value">Not set</span>
+            </div>
+          </div>
+
+          <div class="field-display" data-field="email">
+            <label>Email</label>
+            <div class="field-value" id="display-email">
+              <span class="empty-value">Not set</span>
+            </div>
+          </div>
+
+          <div class="field-display" data-field="city">
+            <label>City</label>
+            <div class="field-value" id="display-city">
+              <span class="empty-value">Not set</span>
+            </div>
+          </div>
+
+          <div class="field-display" data-field="institution">
+            <label>Institution</label>
+            <div class="field-value" id="display-institution">
+              <span class="empty-value">Not set</span>
+            </div>
+            <div class="field-options">
+              Options: <%= fieldOptions.institutions.join(', ') %>
+            </div>
+          </div>
+
+          <div class="field-display" data-field="role">
+            <label>Role</label>
+            <div class="field-value" id="display-role">
+              <span class="empty-value">Not set</span>
+            </div>
+            <div class="field-options">Depends on institution</div>
+          </div>
+
+          <div class="field-display" data-field="position">
+            <label>Position</label>
+            <div class="field-value" id="display-position">
+              <span class="empty-value">Not set</span>
+            </div>
+            <div class="field-options">Depends on institution</div>
+          </div>
+        </div>
+
+        <!-- Hidden form for actual submission -->
+        <form id="registration-form" class="hidden-form">
+          <input type="hidden" name="full_name" id="field-full_name">
+          <input type="hidden" name="email" id="field-email">
+          <input type="hidden" name="city" id="field-city">
+          <input type="hidden" name="institution" id="field-institution">
+          <input type="hidden" name="role" id="field-role">
+          <input type="hidden" name="position" id="field-position">
+        </form>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-primary" id="submit-btn" disabled>
+            Submit Registration
+          </button>
+          <button type="button" class="btn btn-secondary" id="clear-btn">
+            Clear All
+          </button>
+        </div>
+
+        <div id="result"></div>
+      </section>
+
+      <!-- Right Column: AI Chat Interface -->
+      <section class="chat-panel">
+        <h2>AI Assistant</h2>
+        <p class="panel-description">Tell me about yourself and I'll help fill in the form.</p>
+
+        <!-- Chat Messages Container -->
+        <div class="chat-messages" id="chat-messages">
+          <div class="message message-assistant">
+            <div class="message-content">
+              <p>Hello! I'm here to help you complete the registration form.</p>
+              <p>Tell me about yourself — for example:</p>
+              <ul>
+                <li>"I'm Dr. Sarah Chen, a researcher at Stanford University"</li>
+                <li>"My name is John and I work in QA at a tech company in Seattle"</li>
+                <li>"I'm a nurse at City Hospital in Jakarta"</li>
+              </ul>
+              <p>I'll extract the relevant information and fill in the form fields for you.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input -->
+        <div class="chat-input-container">
+          <textarea 
+            id="user-input" 
+            class="chat-input" 
+            placeholder="Describe yourself here..."
+            rows="3"
+          ></textarea>
+          <button type="button" class="btn btn-primary" id="send-btn">
+            Ask AI
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    /**
+     * Field options from server - used for validation and display
+     */
+    const fieldOptions = <%- JSON.stringify(fieldOptions) %>;
+
+    /**
+     * Current form state - tracks all field values
+     */
+    const formState = {
+      full_name: null,
+      email: null,
+      city: null,
+      institution: null,
+      role: null,
+      position: null
+    };
+
+    /**
+     * Update the display for a single field
+     * Shows the value or "Not set" if empty, with appropriate styling
+     * 
+     * @param {string} fieldName - The name of the field to update
+     * @param {string|null} value - The new value (null means empty)
+     * @param {boolean} isAiSuggested - Whether this value came from AI
+     */
+    function updateFieldDisplay(fieldName, value, isAiSuggested = false) {
+      const displayEl = document.getElementById(`display-${fieldName}`);
+      const fieldEl = document.getElementById(`field-${fieldName}`);
+      const containerEl = displayEl.closest('.field-display');
+
+      if (value) {
+        displayEl.innerHTML = `<span class="filled-value">${value}</span>`;
+        if (isAiSuggested) {
+          displayEl.innerHTML += '<span class="ai-badge">AI</span>';
+          containerEl.classList.add('ai-suggested');
+        }
+        fieldEl.value = value;
+        formState[fieldName] = value;
+      } else {
+        displayEl.innerHTML = '<span class="empty-value">Not set</span>';
+        containerEl.classList.remove('ai-suggested');
+        fieldEl.value = '';
+        formState[fieldName] = null;
+      }
+
+      updateSubmitButton();
+    }
+
+    /**
+     * Enable submit button only when required fields are filled
+     */
+    function updateSubmitButton() {
+      const requiredFields = ['full_name', 'email', 'institution', 'role', 'position'];
+      const allFilled = requiredFields.every(field => formState[field]);
+      document.getElementById('submit-btn').disabled = !allFilled;
+    }
+
+    /**
+     * Add a message to the chat display
+     * 
+     * @param {string} content - The message content (can include HTML)
+     * @param {string} type - Either 'user' or 'assistant'
+     */
+    function addChatMessage(content, type) {
+      const messagesEl = document.getElementById('chat-messages');
+      const messageEl = document.createElement('div');
+      messageEl.className = `message message-${type}`;
+      messageEl.innerHTML = `<div class="message-content">${content}</div>`;
+      messagesEl.appendChild(messageEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    /**
+     * Simulate AI response (placeholder for actual Copilot SDK integration)
+     * In Phase 2, this will be replaced with actual API call
+     */
+    function simulateAiResponse(userMessage) {
+      // Show typing indicator
+      addChatMessage('<em>Thinking...</em>', 'assistant');
+
+      // Simulate delay
+      setTimeout(() => {
+        // Remove typing indicator
+        const messages = document.getElementById('chat-messages');
+        messages.removeChild(messages.lastChild);
+
+        // Placeholder response
+        addChatMessage(
+          `<p>I understood your message. In the next phase, I'll use the Copilot SDK to extract information and fill the form.</p>
+           <p><strong>Your message:</strong> "${userMessage}"</p>
+           <p class="text-muted">⚠️ AI integration not yet implemented</p>`,
+          'assistant'
+        );
+      }, 1000);
+    }
+
+    // Event: Send button click
+    document.getElementById('send-btn').addEventListener('click', () => {
+      const input = document.getElementById('user-input');
+      const message = input.value.trim();
+
+      if (message) {
+        addChatMessage(`<p>${message}</p>`, 'user');
+        input.value = '';
+        simulateAiResponse(message);
+      }
+    });
+
+    // Event: Enter key to send (Shift+Enter for newline)
+    document.getElementById('user-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('send-btn').click();
+      }
+    });
+
+    // Event: Clear all fields
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      Object.keys(formState).forEach(field => {
+        updateFieldDisplay(field, null);
+      });
+      addChatMessage('<p><em>Form cleared. Tell me about yourself to start again.</em></p>', 'assistant');
+    });
+
+    // Event: Submit registration
+    document.getElementById('submit-btn').addEventListener('click', () => {
+      // For now, just show the data that would be submitted
+      addChatMessage(
+        `<p>✅ <strong>Registration submitted!</strong></p>
+         <pre>${JSON.stringify(formState, null, 2)}</pre>`,
+        'assistant'
+      );
+    });
+  </script>
+</body>
+</html>

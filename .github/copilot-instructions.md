@@ -6,6 +6,10 @@
 
 This is a project to test the Copilot SDK functionality. It would showcase how we can use Copilot SDK to add agentic capabilities to web applications.
 
+## Documentation
+
+Always add inline documentation to the codebase to explain non-trivial logic. Use JSDoc style comments for functions and classes.
+
 ## Tech Stack
 
 ### Backend
