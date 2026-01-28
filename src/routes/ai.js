@@ -1,6 +1,144 @@
 import { CopilotClient } from "@github/copilot-sdk";
 
 /**
+ * Field options for form validation.
+ * Must match the schema in register.js
+ */
+const fieldOptions = {
+  institutions: ["Industry", "Academia", "Health services", "Government"],
+  roles: {
+    Industry: ["Management", "R&D", "QA", "Production"],
+    Academia: ["Professor", "Researcher", "Lecturer", "Graduate Student"],
+    "Health services": ["Physician", "Nurse", "Pharmacist", "Allied Health"],
+    Government: ["Policy", "Research", "Regulatory", "Administration"],
+  },
+  positions: {
+    Industry: ["Executive", "Manager", "Staff"],
+    Academia: ["Senior", "Junior", "Postdoc"],
+    "Health services": ["Senior", "Junior", "Resident"],
+    Government: ["Senior", "Mid-level", "Junior"],
+  },
+};
+
+/**
+ * System prompt for the form-filling agent.
+ * Defines strict behavior and output format.
+ */
+const FORM_ASSIST_SYSTEM_PROMPT = `You are a JSON-only form extraction bot. You MUST respond with ONLY a JSON object, no other text.
+
+EXTRACT these fields from user input:
+- full_name: person's name
+- email: email address  
+- city: city name
+- institution: MUST be exactly one of "Industry", "Academia", "Health services", "Government"
+- role: based on institution:
+  * Industry: Management, R&D, QA, Production
+  * Academia: Professor, Researcher, Lecturer, Graduate Student
+  * Health services: Physician, Nurse, Pharmacist, Allied Health
+  * Government: Policy, Research, Regulatory, Administration
+- position: based on institution:
+  * Industry: Executive, Manager, Staff
+  * Academia: Senior, Junior, Postdoc
+  * Health services: Senior, Junior, Resident
+  * Government: Senior, Mid-level, Junior
+
+RESPOND WITH THIS EXACT JSON FORMAT:
+{"fields":{"full_name":null,"email":null,"city":null,"institution":null,"role":null,"position":null},"message":"your message here"}
+
+RULES:
+1. Output ONLY valid JSON, nothing else - no markdown, no explanation
+2. Use null for unknown fields
+3. In "message", briefly say what you filled and ask for missing required fields (email, position)
+4. If user asks unrelated questions, set all fields to null and politely redirect them in message
+
+Example input: "I'm John Smith, a nurse in Jakarta"
+Example output: {"fields":{"full_name":"John Smith","email":null,"city":"Jakarta","institution":"Health services","role":"Nurse","position":null},"message":"Got it! I've filled in your name, city, institution and role. What's your email address and position level?"}`;
+
+/**
+ * Validates AI-extracted fields against allowed options.
+ * Returns sanitized fields with invalid values set to null.
+ *
+ * @param {object} fields - The fields extracted by AI
+ * @returns {object} - Validated and sanitized fields
+ */
+function validateFields(fields) {
+  const validated = {
+    full_name: null,
+    email: null,
+    city: null,
+    institution: null,
+    role: null,
+    position: null,
+  };
+
+  if (!fields || typeof fields !== "object") {
+    return validated;
+  }
+
+  // Validate simple string fields
+  if (typeof fields.full_name === "string" && fields.full_name.trim()) {
+    validated.full_name = fields.full_name.trim();
+  }
+  if (typeof fields.email === "string" && fields.email.trim()) {
+    validated.email = fields.email.trim();
+  }
+  if (typeof fields.city === "string" && fields.city.trim()) {
+    validated.city = fields.city.trim();
+  }
+
+  // Validate institution against allowed values
+  if (
+    typeof fields.institution === "string" &&
+    fieldOptions.institutions.includes(fields.institution)
+  ) {
+    validated.institution = fields.institution;
+
+    // Validate role based on institution
+    const allowedRoles = fieldOptions.roles[validated.institution] || [];
+    if (typeof fields.role === "string" && allowedRoles.includes(fields.role)) {
+      validated.role = fields.role;
+    }
+
+    // Validate position based on institution
+    const allowedPositions = fieldOptions.positions[validated.institution] || [];
+    if (typeof fields.position === "string" && allowedPositions.includes(fields.position)) {
+      validated.position = fields.position;
+    }
+  }
+
+  return validated;
+}
+
+/**
+ * Parses JSON from AI response, handling markdown code blocks.
+ *
+ * @param {string} text - The AI response text
+ * @returns {object|null} - Parsed JSON or null if invalid
+ */
+function parseJsonResponse(text) {
+  if (!text) return null;
+
+  // Try to extract JSON from markdown code block
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const jsonStr = codeBlockMatch ? codeBlockMatch[1].trim() : text.trim();
+
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    // Try to find JSON object in the text
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+/**
  * Fastify routes for Copilot SDK experimentation.
  *
  * Phase 2 (hello world): expose a simple JSON API you can hit from Postman.
@@ -176,6 +314,104 @@ export default async function aiRoutes(fastify) {
         // Signal stream complete
         sendEvent("done", { success: true });
       } catch (err) {
+        sendEvent("error", { message: err.message || "Unknown error" });
+      } finally {
+        reply.raw.end();
+      }
+    },
+  );
+
+  /**
+   * POST /ai/assist
+   *
+   * Form-filling agent endpoint.
+   * Takes a user message and current form state, returns extracted fields + message.
+   * Uses streaming to show the AI "thinking" then parses the final JSON.
+   */
+  fastify.post(
+    "/ai/assist",
+    {
+      schema: {
+        description: "AI form-filling assistant with streaming response",
+        tags: ["ai"],
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["prompt"],
+          properties: {
+            prompt: { type: "string", minLength: 1 },
+            currentForm: {
+              type: "object",
+              description: "Current form field values",
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { prompt, currentForm } = request.body;
+
+      // Set SSE headers for streaming
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      const sendEvent = (event, data) => {
+        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      try {
+        // Build context-aware prompt
+        const contextPrompt = currentForm
+          ? `Current form state: ${JSON.stringify(currentForm)}\n\nUser says: ${prompt}`
+          : prompt;
+
+        // Create session with system message (per SDK docs)
+        const session = await copilot.createSession({
+          streaming: true,
+          systemMessage: {
+            content: FORM_ASSIST_SYSTEM_PROMPT,
+          },
+        });
+
+        let fullResponse = "";
+
+        // Stream the response
+        session.on((event) => {
+          if (event?.type === "assistant.message_delta" && event?.data?.deltaContent) {
+            fullResponse += event.data.deltaContent;
+            // Send raw chunks for "thinking" display
+            sendEvent("delta", { text: event.data.deltaContent });
+          }
+        });
+
+        await session.sendAndWait({ prompt: contextPrompt });
+
+        // Parse the JSON response
+        const parsed = parseJsonResponse(fullResponse);
+
+        if (parsed && parsed.fields) {
+          // Validate fields against schema
+          const validatedFields = validateFields(parsed.fields);
+          const message = parsed.message || "I've updated the form based on your input.";
+
+          sendEvent("result", {
+            fields: validatedFields,
+            message,
+          });
+        } else {
+          // AI didn't return valid JSON - send the raw response as message
+          sendEvent("result", {
+            fields: null,
+            message: fullResponse.trim() || "I couldn't understand that. Please describe yourself for the registration form.",
+          });
+        }
+
+        sendEvent("done", { success: true });
+      } catch (err) {
+        fastify.log.error({ err }, "AI assist error");
         sendEvent("error", { message: err.message || "Unknown error" });
       } finally {
         reply.raw.end();

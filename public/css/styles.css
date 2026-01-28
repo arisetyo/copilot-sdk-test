@@ -624,3 +624,13 @@ form {
   color: var(--color-error);
   font-style: italic;
 }
+
+/* AI thinking text - shows raw JSON while processing */
+.thinking-text {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.7;
+}

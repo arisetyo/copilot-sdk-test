@@ -209,7 +209,7 @@
           }
         },
 
-        /** Send message to AI with SSE streaming */
+        /** Send message to AI form assistant with SSE streaming */
         async sendMessage() {
           const message = this.userInput.trim();
           if (!message || this.isStreaming) return;
@@ -223,13 +223,17 @@
           const streamingIndex = this.messages.length;
           this.messages.push({ type: 'assistant', content: '', streaming: true });
 
-          let fullResponse = '';
+          // Get current form values to provide context
+          const currentForm = {};
+          Object.keys(this.form).forEach(key => {
+            currentForm[key] = this.form[key]?.value || null;
+          });
 
           try {
-            const response = await fetch('/ai/stream', {
+            const response = await fetch('/ai/assist', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ prompt: message }),
+              body: JSON.stringify({ prompt: message, currentForm }),
             });
 
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -254,9 +258,16 @@
                   const data = JSON.parse(line.slice(6));
 
                   if (eventType === 'delta' && data.text) {
-                    fullResponse += data.text;
-                    this.messages[streamingIndex].content = marked.parse(fullResponse);
-                    this.$nextTick(() => this.scrollToBottom());
+                    // Just show a simple "thinking" indicator (hide raw JSON)
+                    this.messages[streamingIndex].content = '<p class="thinking-text">Extracting information...</p>';
+                  } else if (eventType === 'result') {
+                    // AI returned structured result - update form and show message
+                    if (data.fields) {
+                      this.applyFields(data.fields);
+                    }
+                    // Replace thinking text with final message
+                    this.messages[streamingIndex].content = marked.parse(data.message || 'Done!');
+                    this.messages[streamingIndex].streaming = false;
                   } else if (eventType === 'error') {
                     throw new Error(data.message);
                   }
@@ -264,10 +275,12 @@
               }
             }
 
-            // Finalize message
-            this.messages[streamingIndex].streaming = false;
-            if (!fullResponse.trim()) {
-              this.messages[streamingIndex].content = '<em>No response received from AI.</em>';
+            // Finalize if not already done by result event
+            if (this.messages[streamingIndex].streaming) {
+              this.messages[streamingIndex].streaming = false;
+              if (!this.messages[streamingIndex].content) {
+                this.messages[streamingIndex].content = '<em>No response received from AI.</em>';
+              }
             }
           } catch (err) {
             this.messages[streamingIndex].streaming = false;
@@ -275,6 +288,20 @@
           } finally {
             this.isStreaming = false;
           }
+        },
+
+        /**
+         * Apply AI-extracted fields to the form
+         * @param {object} fields - Validated field values from AI
+         */
+        applyFields(fields) {
+          if (!fields) return;
+
+          Object.keys(fields).forEach(key => {
+            if (fields[key] !== null && this.form.hasOwnProperty(key)) {
+              this.form[key] = { value: fields[key], aiSuggested: true };
+            }
+          });
         },
       };
     }
