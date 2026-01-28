@@ -29,7 +29,7 @@
               <div class="field-value">
                 <template x-if="form[field.key]?.value">
                   <span>
-                    <span class="filled-value" x-text="form[field.key].value"></span>
+                    <span class="filled-value" x-text="getDisplayValue(field.key, form[field.key].value)"></span>
                     <span class="ai-badge" x-show="form[field.key]?.aiSuggested">AI</span>
                   </span>
                 </template>
@@ -113,6 +113,9 @@
         /** Field options from server */
         fieldOptions: <%- JSON.stringify(fieldOptions) %>,
 
+        /** Accommodation packages from server */
+        accommodations: <%- JSON.stringify(accommodations) %>,
+
         /** Field definitions for rendering */
         fieldList: [
           { key: 'full_name', label: 'Full Name' },
@@ -121,6 +124,7 @@
           { key: 'institution', label: 'Institution', options: 'Options: <%= fieldOptions.institutions.join(", ") %>' },
           { key: 'role', label: 'Role', options: 'Depends on institution' },
           { key: 'position', label: 'Position', options: 'Depends on institution' },
+          { key: 'accommodation', label: 'Accommodation', options: 'Budget ($50), Standard ($80), Business ($120), Premium ($180)' },
         ],
 
         /** Form state - each field has { value, aiSuggested } */
@@ -131,6 +135,7 @@
           institution: { value: null, aiSuggested: false },
           role: { value: null, aiSuggested: false },
           position: { value: null, aiSuggested: false },
+          accommodation: { value: null, aiSuggested: false },
         },
 
         /** Chat messages array */
@@ -144,6 +149,7 @@
                 <li>"My name is John and I work in QA at a tech company in Seattle"</li>
                 <li>"I'm a nurse at City Hospital in Jakarta"</li>
               </ul>
+              <p>I can also help you choose an accommodation package if you ask about rooms or budget options!</p>
               <p>I'll extract the relevant information and fill in the form fields for you.</p>`,
             streaming: false,
           },
@@ -169,6 +175,20 @@
          */
         setField(key, value, aiSuggested = false) {
           this.form[key] = { value, aiSuggested };
+        },
+
+        /**
+         * Get display value for a field (handles special formatting like accommodation)
+         * @param {string} key - Field key
+         * @param {any} value - Field value
+         * @returns {string} - Display value
+         */
+        getDisplayValue(key, value) {
+          if (key === 'accommodation' && typeof value === 'number') {
+            const pkg = this.accommodations.find(a => a.packageId === value);
+            return pkg ? `${pkg.name} (${pkg.cost})` : value;
+          }
+          return value;
         },
 
         /** Clear all form fields */

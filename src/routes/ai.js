@@ -1,4 +1,4 @@
-import { CopilotClient } from "@github/copilot-sdk";
+import { CopilotClient, defineTool } from "@github/copilot-sdk";
 
 /**
  * Field options for form validation.
@@ -18,7 +18,43 @@ const fieldOptions = {
     "Health services": ["Senior", "Junior", "Resident"],
     Government: ["Senior", "Mid-level", "Junior"],
   },
+  accommodations: [1, 2, 3, 4], // Valid package IDs
 };
+
+/**
+ * Accommodation packages data.
+ * Used by the custom tool handler.
+ */
+const accommodations = [
+  {
+    packageId: 1,
+    name: "Budget",
+    description: "Basic room with shared facilities",
+    cost: "$50/night",
+    amenities: ["WiFi", "Shared bathroom"],
+  },
+  {
+    packageId: 2,
+    name: "Standard",
+    description: "Private room with ensuite bathroom",
+    cost: "$80/night",
+    amenities: ["WiFi", "Private bathroom", "TV"],
+  },
+  {
+    packageId: 3,
+    name: "Business",
+    description: "Premium room with workspace",
+    cost: "$120/night",
+    amenities: ["WiFi", "Private bathroom", "TV", "Desk", "Mini fridge"],
+  },
+  {
+    packageId: 4,
+    name: "Premium",
+    description: "Luxury suite with full amenities",
+    cost: "$180/night",
+    amenities: ["WiFi", "Private bathroom", "TV", "Desk", "Mini fridge", "Room service", "Balcony"],
+  },
+];
 
 /**
  * System prompt for the form-filling agent.
@@ -41,18 +77,42 @@ EXTRACT these fields from user input:
   * Academia: Senior, Junior, Postdoc
   * Health services: Senior, Junior, Resident
   * Government: Senior, Mid-level, Junior
+- accommodation: package ID (1=Budget $50, 2=Standard $80, 3=Business $120, 4=Premium $180)
+
+ACCOMMODATION TOOL:
+If the user asks about accommodations, packages, rooms, or budget options, use the get_accommodations tool to get available packages, then recommend based on their needs.
 
 RESPOND WITH THIS EXACT JSON FORMAT:
-{"fields":{"full_name":null,"email":null,"city":null,"institution":null,"role":null,"position":null},"message":"your message here"}
+{"fields":{"full_name":null,"email":null,"city":null,"institution":null,"role":null,"position":null,"accommodation":null},"message":"your message here"}
 
 RULES:
 1. Output ONLY valid JSON, nothing else - no markdown, no explanation
 2. Use null for unknown fields
 3. In "message", briefly say what you filled and ask for missing required fields (email, position)
 4. If user asks unrelated questions, set all fields to null and politely redirect them in message
+5. When recommending accommodation, set the accommodation field to the package ID (1-4)
 
 Example input: "I'm John Smith, a nurse in Jakarta"
-Example output: {"fields":{"full_name":"John Smith","email":null,"city":"Jakarta","institution":"Health services","role":"Nurse","position":null},"message":"Got it! I've filled in your name, city, institution and role. What's your email address and position level?"}`;
+Example output: {"fields":{"full_name":"John Smith","email":null,"city":"Jakarta","institution":"Health services","role":"Nurse","position":null,"accommodation":null},"message":"Got it! I've filled in your name, city, institution and role. What's your email address and position level?"}
+
+Example with accommodation: "I need a room with a workspace under $150"
+Example output: {"fields":{"full_name":null,"email":null,"city":null,"institution":null,"role":null,"position":null,"accommodation":3},"message":"I recommend the Business package at $120/night - it includes a workspace with desk, mini fridge, and all the essentials!"}`;
+
+/**
+ * Custom tool definition for fetching accommodation packages.
+ * The agent can call this tool when the user asks about accommodations.
+ */
+const getAccommodationsTool = defineTool("get_accommodations", {
+  description: "Get available accommodation packages with pricing and amenities. Call this when the user asks about rooms, packages, accommodation options, or budget for staying.",
+  parameters: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+  handler: async () => {
+    return accommodations;
+  },
+});
 
 /**
  * Validates AI-extracted fields against allowed options.
@@ -69,6 +129,7 @@ function validateFields(fields) {
     institution: null,
     role: null,
     position: null,
+    accommodation: null,
   };
 
   if (!fields || typeof fields !== "object") {
@@ -104,6 +165,14 @@ function validateFields(fields) {
     if (typeof fields.position === "string" && allowedPositions.includes(fields.position)) {
       validated.position = fields.position;
     }
+  }
+
+  // Validate accommodation against allowed package IDs
+  const accommodationId = typeof fields.accommodation === "string" 
+    ? parseInt(fields.accommodation, 10) 
+    : fields.accommodation;
+  if (typeof accommodationId === "number" && fieldOptions.accommodations.includes(accommodationId)) {
+    validated.accommodation = accommodationId;
   }
 
   return validated;
@@ -368,12 +437,13 @@ export default async function aiRoutes(fastify) {
           ? `Current form state: ${JSON.stringify(currentForm)}\n\nUser says: ${prompt}`
           : prompt;
 
-        // Create session with system message (per SDK docs)
+        // Create session with system message and custom tools (per SDK docs)
         const session = await copilot.createSession({
           streaming: true,
           systemMessage: {
             content: FORM_ASSIST_SYSTEM_PROMPT,
           },
+          tools: [getAccommodationsTool],
         });
 
         let fullResponse = "";
@@ -384,6 +454,11 @@ export default async function aiRoutes(fastify) {
             fullResponse += event.data.deltaContent;
             // Send raw chunks for "thinking" display
             sendEvent("delta", { text: event.data.deltaContent });
+          }
+          // Log tool calls for debugging
+          if (event?.type === "tool.call") {
+            fastify.log.info({ tool: event.data }, "Tool called by agent");
+            sendEvent("tool_call", { name: event.data?.name || "unknown" });
           }
         });
 

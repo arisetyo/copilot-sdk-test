@@ -32,6 +32,41 @@ const fieldOptions = {
   }
 };
 
+/**
+ * Accommodation packages available for registration.
+ * Each package has a unique ID, name, description, cost, and amenities list.
+ */
+const accommodations = [
+  {
+    packageId: 1,
+    name: 'Budget',
+    description: 'Basic room with shared facilities',
+    cost: '$50/night',
+    amenities: ['WiFi', 'Shared bathroom']
+  },
+  {
+    packageId: 2,
+    name: 'Standard',
+    description: 'Private room with ensuite bathroom',
+    cost: '$80/night',
+    amenities: ['WiFi', 'Private bathroom', 'TV']
+  },
+  {
+    packageId: 3,
+    name: 'Business',
+    description: 'Premium room with workspace',
+    cost: '$120/night',
+    amenities: ['WiFi', 'Private bathroom', 'TV', 'Desk', 'Mini fridge']
+  },
+  {
+    packageId: 4,
+    name: 'Premium',
+    description: 'Luxury suite with full amenities',
+    cost: '$180/night',
+    amenities: ['WiFi', 'Private bathroom', 'TV', 'Desk', 'Mini fridge', 'Room service', 'Balcony']
+  }
+];
+
 export default async function registerRoutes(fastify) {
   /**
    * Home page - shows links to both form types
@@ -53,7 +88,7 @@ export default async function registerRoutes(fastify) {
    * Users can describe themselves in natural language and let AI fill the form
    */
   fastify.get('/agentic-form', async (request, reply) => {
-    return reply.view('agentic.ejs', { fieldOptions });
+    return reply.view('agentic.ejs', { fieldOptions, accommodations });
   });
 
   /**
@@ -92,6 +127,16 @@ export default async function registerRoutes(fastify) {
       roles: fieldOptions.roles[institution] || [],
       positions: fieldOptions.positions[institution] || []
     };
+  });
+
+  /**
+   * API endpoint to get available accommodation packages.
+   * Used by the AI agent's custom tool to fetch package options.
+   * 
+   * @returns {Array} Array of accommodation package objects
+   */
+  fastify.get('/api/accommodations', async (request, reply) => {
+    return accommodations;
   });
 }
 

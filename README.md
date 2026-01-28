@@ -55,3 +55,35 @@ npm start
 
 See [docs/plan.md](docs/plan.md) for detailed architecture and design decisions.
 
+## Log
+
+### 28-01-2026
+
+AI-Assisted Registration Form using GitHub Copilot SDK
+
+✅ **Phase 1** - Foundation
+- Fastify server with EJS templates
+- Traditional form with conditional dropdowns
+- Agentic form UI with two-column layout
+- Custom CSS with gradient, frosted glass effects
+
+✅ **Phase 2** - Copilot SDK Integration
+- `/ai/hello` - Simple test endpoint
+- `/ai/stream` - SSE streaming responses
+- `/ai/assist` - Form-filling agent with:
+  - Strict JSON-only system prompt
+  - Field validation against schema
+  - SSE streaming for real-time feedback
+
+✅ **Guardrails**
+- AI constrained to form-filling only
+- Server-side validation of AI output
+- User reviews before submission
+- `null` for unknown values (no guessing)
+
+✅ **Frontend**
+- Alpine.js for reactive state
+- Streaming chat UI with markdown rendering
+- Auto-populated form fields with "AI" badges
+
+The project demonstrates how to embed Copilot's agentic capabilities into a web app while keeping tight control over what the AI can do. 🎉

@@ -218,13 +218,121 @@ This keeps complexity manageable and avoids overfilling.
 
 ---
 
-## 11. Learning Path (Suggested Next Steps)
+## 11. Phase 3: Custom Tools Expansion
+
+### 11.1 Goal
+
+Demonstrate the Copilot SDK's **custom tool** capability by allowing the agent to autonomously fetch accommodation options from an API endpoint.
+
+### 11.2 New Endpoint: `/api/accommodations`
+
+Returns available accommodation packages:
+
+```json
+[
+  {
+    "packageId": 1,
+    "name": "Budget",
+    "description": "Basic room with shared facilities",
+    "cost": "$50/night",
+    "amenities": ["WiFi", "Shared bathroom"]
+  },
+  {
+    "packageId": 2,
+    "name": "Standard",
+    "description": "Private room with ensuite bathroom",
+    "cost": "$80/night",
+    "amenities": ["WiFi", "Private bathroom", "TV"]
+  },
+  {
+    "packageId": 3,
+    "name": "Business",
+    "description": "Premium room with workspace",
+    "cost": "$120/night",
+    "amenities": ["WiFi", "Private bathroom", "TV", "Desk", "Mini fridge"]
+  },
+  {
+    "packageId": 4,
+    "name": "Premium",
+    "description": "Luxury suite with full amenities",
+    "cost": "$180/night",
+    "amenities": ["WiFi", "Private bathroom", "TV", "Desk", "Mini fridge", "Room service", "Balcony"]
+  }
+]
+```
+
+### 11.3 Updated Schema
+
+Add `accommodation` field to the form:
+
+```json
+{
+  "full_name": "string | null",
+  "email": "string | null",
+  "city": "string | null",
+  "institution": "Industry | Academia | Health services | Government | null",
+  "role": "string | null",
+  "position": "string | null",
+  "accommodation": "1 | 2 | 3 | 4 | null (package ID)"
+}
+```
+
+### 11.4 Custom Tool Definition
+
+Using Copilot SDK's `defineTool`:
+
+```javascript
+const getAccommodations = defineTool("get_accommodations", {
+  description: "Get available accommodation packages with pricing and amenities",
+  parameters: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+  handler: async () => {
+    // Fetch from /api/accommodations endpoint
+    return accommodationPackages;
+  },
+});
+```
+
+### 11.5 Agent Behavior
+
+When the user mentions accommodations, budget, or asks "what packages are available?":
+
+1. Agent calls `get_accommodations` tool
+2. Receives package list
+3. Helps user choose based on preferences (budget, amenities)
+4. Sets `accommodation` field to chosen package ID
+
+### 11.6 Implementation Steps
+
+1. Create `/api/accommodations` endpoint in `register.js`
+2. Add `accommodation` to `fieldOptions` and validation
+3. Update system prompt to know about accommodation field
+4. Register custom tool with Copilot session
+5. Update frontend form to display accommodation field
+6. Test agent's ability to call tool and recommend packages
+
+### 11.7 Example Interaction
+
+**User:** "I need a room with a workspace, preferably under $150/night"
+
+**Agent:** 
+1. Calls `get_accommodations` tool
+2. Filters: Business ($120) has Desk, Premium ($180) exceeds budget
+3. Returns: `{"accommodation": 3, "message": "I recommend the Business package at $120/night - it includes a workspace and is within your budget."}`
+
+---
+
+## 12. Learning Path (Suggested Next Steps)
 
 1. Minimal Copilot SDK agent (CLI / local)
 2. Hardcode schema + system prompt
 3. Integrate with Fastify route
 4. Add HTMX wiring
 5. Polish UX + guardrails
+6. **Add custom tools for dynamic data fetching**
 
 ---
 

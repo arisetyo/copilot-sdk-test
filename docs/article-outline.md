@@ -1,4 +1,4 @@
-## Temporary notes
+## Notes
 
 - We still need Copilot CLI installed in machine/server and authorized it using your Github account.
 
@@ -12,3 +12,8 @@
 
 - The "Form-Filling Agent" concept is available in a separate document: `docs/concept_form-filling_agent.md`.
 
+## Article content
+
+1. Opening paragraph about what is Copilot SDK and what it can do or add to an existing app
+2. A how-to discussions about creating this project. Add snippets of the important stuff, eg. adding Copilot SDK to Fastify, creating requests, creating system messages, creating custom tools, etc.
+3. Conclusion, about how easy to add Copilot to an app and some its caveats.
